@@ -1,13 +1,8 @@
 import os
 import json
 from openai import OpenAI
+from anthropic import Anthropic
 
-
-MAPPING_PATH = "/home/hice1/yzhong307/scratch/mimic_iii_1.4/icd9_procedure_mapping.json"
-
-
-with open("./api_keys.json", "r") as f:
-    os.environ["OPENAI_API_KEY"] = json.load(f)["openai_api_key"]
 
 
 chapter_idx_to_pkl_name = {
@@ -26,9 +21,6 @@ chapter_idx_to_pkl_name = {
     "extra": "Supplemental_external_causes_of_injury_and_supplemental_classification.pkl"
 }
 
-with open(MAPPING_PATH, "r") as f:
-    procedure_text_to_icd = json.load(f)["procedure_text_to_icd"]
-
 
 def setup_agents(internal_memory: bool):
     agents = {}
@@ -40,7 +32,6 @@ def setup_agents(internal_memory: bool):
             "expert_idx": chapter_idx,
             "expert_domain_str": expert_domain_str,
             "expert_name": "expert in " + expert_domain_str,
-            "agent": OpenAI(),
             "memory": []
         }
         else:
@@ -48,6 +39,44 @@ def setup_agents(internal_memory: bool):
                 "expert_idx": chapter_idx,
                 "expert_domain_str": expert_domain_str,
                 "expert_name": "expert in " + expert_domain_str,
-                "agent": OpenAI()
             }
     return agents
+
+
+def setup_models(model_name: str, api_keys_json_path="./api_keys.json"):
+    """
+    Setup the model based on the model name.
+    """
+
+    with open("./api_keys.json", "r") as f:
+        data = json.load(f)
+        os.environ["OPENAI_API_KEY"] = data["openai_api_key"]
+        os.environ["HF_HOME"] = os.path.expanduser(data["hugging_face_home_path"])
+        os.environ["HUGGINGFACE_HUB_TOKEN"] = data["huggingface_key"]
+        os.environ["ANTHROPIC_API_KEY"] = data["claude_api_key"]
+
+    if "gpt" in model_name:
+        return {
+            "model_name": model_name,
+            "model_instance": OpenAI(),
+        }
+    elif model_name == "medllama":
+        from transformers import AutoTokenizer, AutoModelForCausalLM
+
+        token = os.environ["HUGGINGFACE_HUB_TOKEN"]
+
+        tokenizer = AutoTokenizer.from_pretrained("Henrychur/MMed-Llama-3-8B", token=token)
+        model = AutoModelForCausalLM.from_pretrained("Henrychur/MMed-Llama-3-8B", torch_dtype="bfloat16", token=token, device_map="auto")
+        return {
+            "model_name": model_name,
+            "model_instance": model,
+            "tokenizer_instance": tokenizer,
+        }
+    elif model_name.startswith("claude-3"):
+        client = Anthropic()
+        return {
+            "model_name": model_name,
+            "model_instance": client,
+        }
+    else:
+        raise ValueError(f"Unsupported model name: {model_name}")

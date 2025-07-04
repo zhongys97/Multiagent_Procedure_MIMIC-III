@@ -6,6 +6,7 @@ from openai import OpenAI
 import pickle
 from prompts.private_thought import rag_prompt
 from utils.helper import format_rag_response
+from utils.call_llms import get_response
 
 INDICES_DIR = "./MIMIC3_RAG/"
 
@@ -31,7 +32,7 @@ chapter_idx_to_pkl_name = {
 }
 
 def get_embedding(text, model="text-embedding-3-small"):
-    response = client.embeddings.create(input=[text], model=model)
+    response = client.embeddings.create(input=text, model=model)
     return response.data[0].embedding
 
 def query_faiss(index, chunks, sources, question: str, top_k: int = 5):
@@ -48,7 +49,7 @@ def query_faiss(index, chunks, sources, question: str, top_k: int = 5):
 
 
 
-def generate_rag_responses(chapter_idx: str, questions: list, indices_dir: str = "./../MIMIC3_RAG/") -> str:
+def generate_rag_responses(chapter_idx: str, questions: list, indices_dir: str, model_info: dict) -> str:
 
     index_pkl_name = chapter_idx_to_pkl_name[chapter_idx]
 
@@ -79,13 +80,9 @@ def generate_rag_responses(chapter_idx: str, questions: list, indices_dir: str =
             questions
         )
 
-        response = client.chat.completions.create(
-            model="gpt-4o",  
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.5
-        )
+        response_str = get_response(prompt, model_info)
 
-        response_str = response.choices[0].message.content.strip()
+        # response_str = response.choices[0].message.content.strip()
         response_dict = format_rag_response(response_str)
         combined_response.append({"Question": question, "Response": response_dict})
         
@@ -98,6 +95,3 @@ if __name__ == "__main__":
     response = generate_rag_responses(chapter_idx, questions, indices_dir=INDICES_DIR)
     print(response)
     
-    # Example output:
-    # Answer: The typical treatment for pneumonia includes antibiotics, rest, and fluids.
-    # Relevance: 10

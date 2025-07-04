@@ -7,8 +7,13 @@ raise_questions_for_rag = """
     You are an expert in {}.
     You are in the middle of a goal to propose the best procedure for this patient.
     Please raise two questions that you think are important to look up in the literature given the patient data and previous discussions.
+
     The questions shall answer unaddressed aspects of previous discussions.
     The questions shall relate to some specific observations or findings from the patient data.
+    Do not include preambles or explanations, just the questions.
+    Do not index the questions, do not use bullet points, and do not use any other formatting.
+    Answer with a serialized list format that contains the questions, explicitly using square brackets and commas to separate the questions.:
+    [<question 1>, <question 2>]
 """
 
 rag_prompt = """
@@ -28,12 +33,12 @@ rag_prompt = """
         Finally, if the question is directly addressed by the literature, you should report a high relevance.
         The relevance score is an integer between 0 and 10, where 0 means not relevant at all, and 10 means highly relevant.
         
-        Format your response as a dictionary with the following keys:
-        Answer: <your answer here>
-        Relevance: <score>
+        Format your response as a serialized JSON with the following keys, explcicitly include the curly braces, double quotes, and colons:
+        "Answer": <your answer here>,
+        "Relevance": <score>
     """
 
-reflect_on_rag_response = """
+digest_rag_response = """
         You are an expert in {}.
         During previous literature search, you found the following information:
         {}
@@ -44,7 +49,7 @@ reflect_on_rag_response = """
         Consider the relevance of the new finding when formulating your response.
         Relevance is an integer between 0 and 10, where 0 means not relevant at all, and 10 means highly relevant.
         
-        Write a summary (up to 300 words) of your updated understanding.
+        Write a paragraph (up to 300 words) of your updated understanding. Do not include the summary of the findings, just your updated understanding.
         You must cite the relevant literature in your answer, using (Source: <title of the source>) format.
         """
 

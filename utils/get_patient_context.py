@@ -11,6 +11,7 @@ def get_patient_context_per_admission(patient_ehr, admission_idx):
     
     age_at_admission = admission["age_at_admission"]
     admission_time = admission["admission_time"]
+    insurance_type = admission["insurance"]
 
     ground_truth_procedures_icd9 = admission["procedures_icd9"]
     ground_truth_procedures_text = admission["procedures_text"]
@@ -55,6 +56,8 @@ def get_patient_context_per_admission(patient_ehr, admission_idx):
     return {
         "skip": False,
         "context": patient_context,
+        "age_at_admission": age_at_admission,
+        "insurance_type": insurance_type,
         "ground_truth_procedures_icd9": ground_truth_procedures_icd9,
         "ground_truth_procedures_text": ground_truth_procedures_text
         }
