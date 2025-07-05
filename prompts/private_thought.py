@@ -1,10 +1,10 @@
 
 raise_questions_for_rag = """
+    You are an expert in {}.
     With this patient:
         {}
     and the following discussions of a few experts:
         {}
-    You are an expert in {}.
     You are in the middle of a goal to propose the best procedure for this patient.
     Please raise two questions that you think are important to look up in the literature given the patient data and previous discussions.
 
@@ -12,8 +12,9 @@ raise_questions_for_rag = """
     The questions shall relate to some specific observations or findings from the patient data.
     Do not include preambles or explanations, just the questions.
     Do not index the questions, do not use bullet points, and do not use any other formatting.
-    Answer with a serialized list format that contains the questions, explicitly using square brackets and commas to separate the questions.:
-    [<question 1>, <question 2>]
+    Answer with a serialized list format that contains the questions, explicitly using square brackets and commas to separate the questions
+    Questions are enclosde in double quotes:
+    ["<question 1>", "<question 2>"]
 """
 
 rag_prompt = """

@@ -32,14 +32,12 @@ def get_patient_context_per_admission(patient_ehr, admission_idx):
             prev_admission_discharge_time = prev_admission["discharge_time"]
             summary_prev_admissions += f"Admission from {prev_admission_admission_time} to {prev_admission_discharge_time}: {prev_admission['ehr_summary']}\n"
 
-    windowed_ehr = admission["windowed_current_admission_ehr"]
+    windowed_current_admission_ehr = admission["windowed_current_admission_ehr"]
 
     
     ground_truth_procedures_icd9 = admission["procedures_icd9"]
     ground_truth_procedures_text = admission["procedures_text"]
 
-    window = windowed_ehr[-1]
-    windowed_ehr = window["windowed_ehr"]
 
     patient_context = f"""
     Patient Information:
@@ -49,8 +47,6 @@ def get_patient_context_per_admission(patient_ehr, admission_idx):
     - Admission Time: {admission_time}
     - Previous Admissions:
     {summary_prev_admissions}
-    Current Admission Data:
-    {windowed_ehr}
     """
 
     return {
@@ -59,5 +55,6 @@ def get_patient_context_per_admission(patient_ehr, admission_idx):
         "age_at_admission": age_at_admission,
         "insurance_type": insurance_type,
         "ground_truth_procedures_icd9": ground_truth_procedures_icd9,
-        "ground_truth_procedures_text": ground_truth_procedures_text
+        "ground_truth_procedures_text": ground_truth_procedures_text,
+        "windowed_ehr_list": windowed_current_admission_ehr, #list
         }

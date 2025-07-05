@@ -34,12 +34,33 @@ def get_response(prompt: str, model_info: dict):
         print("Exceeded maximum retry attempts for GPT-4o.")
         return ""
     
-    elif model_name == "gpt-4.1-mini":
+    elif model_name == "gpt-4o-mini":
         agent = model_info["model_instance"]
         for attempt in range(5):
             try:
                 response = agent.responses.create(
-                    model="gpt-4.1-mini-2025-04-14",
+                    model="gpt-4o-mini",
+                    input=prompt
+                )
+                return response.output_text.strip()
+
+            except Exception as e:
+                if "rate limit" in str(e).lower():
+                    print(f"[Attempt {attempt + 1}] Rate limit hit. Retrying in 30 seconds...")
+                    time.sleep(30)
+                else:
+                    print(f"[Attempt {attempt + 1}] Unhandled error: {repr(e)}")
+                    return ""
+
+        print("Exceeded maximum retry attempts for GPT-4.1 mini.")
+        return ""
+    
+    elif model_name == "gpt-4.1-nano":
+        agent = model_info["model_instance"]
+        for attempt in range(5):
+            try:
+                response = agent.responses.create(
+                    model="gpt-4.1-nano",
                     input=prompt
                 )
                 return response.output_text.strip()
