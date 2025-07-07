@@ -60,23 +60,115 @@ def setup_models(model_name: str, api_keys_json_path="./api_keys.json"):
             "model_name": model_name,
             "model_instance": OpenAI(),
         }
-    elif model_name == "medllama":
-        from transformers import AutoTokenizer, AutoModelForCausalLM
-
-        token = os.environ["HUGGINGFACE_HUB_TOKEN"]
-
-        tokenizer = AutoTokenizer.from_pretrained("Henrychur/MMed-Llama-3-8B", token=token)
-        model = AutoModelForCausalLM.from_pretrained("Henrychur/MMed-Llama-3-8B", torch_dtype="bfloat16", token=token, device_map="auto")
-        return {
-            "model_name": model_name,
-            "model_instance": model,
-            "tokenizer_instance": tokenizer,
-        }
     elif model_name.startswith("claude-3"):
         client = Anthropic()
         return {
             "model_name": model_name,
             "model_instance": client,
         }
+    elif model_name == "qwen2":
+        from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+        import torch
+
+        token = os.environ["HUGGINGFACE_HUB_TOKEN"]
+
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+        )
+
+        model_id = "Qwen/Qwen2-7B"
+
+        
+        model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+            quantization_config=quantization_config,
+            attn_implementation="flash_attention_2",
+            trust_remote_code=True
+        ).eval()
+
+
+        # YARN & Long context config (optional, many Qwen models have this in config.json already)
+        if hasattr(model.config, "use_sliding_window") and hasattr(model.config, "slide_window_size"):
+            model.config.use_sliding_window = True
+            model.config.slide_window_size = 8192  # or 4096 or model default
+
+        if hasattr(model.config, "max_position_embeddings"):
+            print(f"Max context: {model.config.max_position_embeddings} tokens")
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+        tokenizer.model_max_length = model.config.max_position_embeddings
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model.to(device)
+
+        return {
+            "model_name": model_name,
+            "model_instance": model,
+            "tokenizer_instance": tokenizer,
+        }
+    elif model_name == "medgemma":
+        import transformers
+
+        # transformers.logging.ERROR
+        transformers.logging.set_verbosity_error()
+
+        from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+        from huggingface_hub import login
+        import torch
+        torch._dynamo.config.cache_size_limit = 1024
+
+        model_id = "google/medgemma-4b-it"
+
+        model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+            trust_remote_code=True, # Keep this if MedGemma needs it
+            attn_implementation="flash_attention_2"
+        )
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+        return {
+            "model_name": model_name,
+            "model_instance": model,
+            "tokenizer_instance": tokenizer,
+        }
+    elif model_name == "OpenBioLLM":
+
+        from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+        from huggingface_hub import login
+        import torch
+
+        model_id = "aaditya/Llama3-OpenBioLLM-70B"
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+        quant_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,  # Use bfloat16 if on A100/H100
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4"  # nf4 is recommended
+        )
+
+        # Load the model with quantization
+        model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            quantization_config=quant_config,
+            device_map="auto",
+            trust_remote_code=True,
+            attn_implementation="flash_attention_2"
+        ).eval()
+
+        return {
+            "model_name": model_name,
+            "model_instance": model,
+            "tokenizer_instance": tokenizer,
+        }
+
     else:
         raise ValueError(f"Unsupported model name: {model_name}")

@@ -7,6 +7,9 @@ def retain_most_recent_info(item_for_prompt, retain_last_fraction: float, retain
 
     if isinstance(item_for_prompt, list) or isinstance(item_for_prompt, str):
         length = len(item_for_prompt)
+
+        if length < 40:
+            return str(item_for_prompt)
         start_idx = max(length - retain_last_num_items, int(length * (1 - retain_last_fraction)))
         return str(item_for_prompt[start_idx:])
     

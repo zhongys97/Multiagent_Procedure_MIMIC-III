@@ -6,6 +6,7 @@ from pipeline.query_literature import generate_rag_responses
 from utils.setup import setup_agents
 from utils.call_llms import get_response
 from utils.get_patient_context import get_patient_context_per_admission
+from utils.truncate_prompts import retain_most_recent_info
 from ast import literal_eval
 
 with open('api_keys.json', 'r') as f:
@@ -53,10 +54,14 @@ def reflect_on_rag_response(expert_domain, expert_private_memory, rag_combined_r
     return response
 
 
-def update_agent_private_thinking(round_idx, chapter_idx, patient_data, previous_discussions, expert_private_memory, model_info, rag_data_dir):
+def update_agent_private_thinking(round_idx, chapter_idx, patient_data, previous_discussions, expert_private_memory, model_info, rag_data_dir, alone=False):
 
-    expert_domain = agents[chapter_idx]["expert_domain_str"]
-    expert_name = agents[chapter_idx]["expert_name"]
+    if not alone:
+        expert_domain = agents[chapter_idx]["expert_domain_str"]
+        expert_name = agents[chapter_idx]["expert_name"]
+    else:
+        expert_domain = "primary care"
+        expert_name = "expert in primary care"
 
     new_agent_memory_item = {"round_idx": round_idx,
                              "chapter_idx": chapter_idx,
@@ -65,7 +70,7 @@ def update_agent_private_thinking(round_idx, chapter_idx, patient_data, previous
     list_of_questions = generate_questions(patient_data, previous_discussions, expert_domain, model_info)
     new_agent_memory_item["questions_for_rag"] = list_of_questions
 
-    rag_combined_response = generate_rag_responses(chapter_idx, list_of_questions, indices_dir=rag_data_dir, model_info=model_info)
+    rag_combined_response = generate_rag_responses(chapter_idx, list_of_questions, indices_dir=rag_data_dir, model_info=model_info, alone=alone)
     new_agent_memory_item["rag_response"] = rag_combined_response
 
     new_insight = reflect_on_rag_response(expert_domain, expert_private_memory, rag_combined_response, model_info)

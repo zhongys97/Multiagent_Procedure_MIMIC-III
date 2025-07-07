@@ -23,7 +23,9 @@ def run_by_subject_json(config_run_dir: str,
                         end_condition: str,
                         query_literature: bool,
                         rag_data_dir: str,
-                        procedure_text_to_icd: dict):
+                        procedure_text_to_icd: dict,
+                        retain_last_fraction: float = 1.0,
+                        retain_last_num: int = float("inf")):
     """
     Run the multi-agent discussion for a given subject's EHR data.
     """
@@ -33,12 +35,6 @@ def run_by_subject_json(config_run_dir: str,
 
     with open(patient_ehr_json_path, "r") as f:
         patient_ehr = json.load(f)
-
-    model_name = model_info["model_name"]
-    if "gpt" not in model_name.lower():
-        retain_last_fraction = 0.3
-    else:
-        retain_last_fraction = 1.0
 
     gender = patient_ehr["gender"]
     dob = patient_ehr["dob"]
@@ -80,7 +76,7 @@ def run_by_subject_json(config_run_dir: str,
             print(f"\nProcessing window {window_idx + 1}/{len(windowed_ehr_list)} for admission {i+1}/{len(admissions)} of patient {patient_name}")
             
             shared_memory["patient_context"] = {"basic_info": patient_context,
-                                                "recent_info": window["windowed_ehr"]}, # causal}
+                                                "recent_info": window["windowed_ehr"]} # causal}
 
             for round in range(num_rounds):
                 print("=" * 40)
@@ -105,16 +101,18 @@ def run_by_subject_json(config_run_dir: str,
                         prompt = expert_without_query_consensus.format(
                             expert_domain_str,
                             shared_memory['procedure_text_to_icd'],
-                            shared_memory["patient_context"],
-                            shared_memory["discussion"],
+                            retain_most_recent_info(shared_memory["patient_context"], retain_last_fraction),
+                            retain_most_recent_info(shared_memory["discussion"], retain_last_fraction, retain_last_num),
+                            round + 1,
+                            num_rounds,
                         )
                     elif query_literature and end_condition == "consensus":
 
                         updated_private_memory = update_agent_private_thinking(
                             round,
                             chapter_idx,
-                            shared_memory["patient_context"],
-                            shared_memory["discussion"],
+                            retain_most_recent_info(shared_memory["patient_context"], retain_last_fraction),
+                            retain_most_recent_info(shared_memory["discussion"], retain_last_fraction, retain_last_num),
                             agent_info["memory"],
                             model_info,
                             rag_data_dir,
@@ -125,9 +123,11 @@ def run_by_subject_json(config_run_dir: str,
                         prompt = expert_with_query_consensus.format(
                             expert_domain_str,
                             shared_memory['procedure_text_to_icd'],
-                            shared_memory["patient_context"],
-                            shared_memory["discussion"],
+                            retain_most_recent_info(shared_memory["patient_context"], retain_last_fraction),
+                            retain_most_recent_info(shared_memory["discussion"], retain_last_fraction, retain_last_num),
                             agent_info["memory"][-1]["new_insight"],
+                            round + 1,
+                            num_rounds,
                         )
 
                     elif not query_literature and end_condition == "leader":
@@ -135,16 +135,16 @@ def run_by_subject_json(config_run_dir: str,
                         prompt = expert_without_query_leader.format(
                             expert_domain_str,
                             shared_memory['procedure_text_to_icd'],
-                            shared_memory["patient_context"],
-                            shared_memory["discussion"],
+                            retain_most_recent_info(shared_memory["patient_context"], retain_last_fraction),
+                            retain_most_recent_info(shared_memory["discussion"], retain_last_fraction, retain_last_num),
                         )
                     elif query_literature and end_condition == "leader":
 
                         updated_private_memory = update_agent_private_thinking(
                             round,
                             chapter_idx,
-                            shared_memory["patient_context"],
-                            shared_memory["discussion"],
+                            retain_most_recent_info(shared_memory["patient_context"], retain_last_fraction),
+                            retain_most_recent_info(shared_memory["discussion"], retain_last_fraction, retain_last_num),
                             agent_info["memory"],
                             model_info,
                             rag_data_dir
@@ -155,12 +155,14 @@ def run_by_subject_json(config_run_dir: str,
                         prompt = expert_with_query_leader.format(
                             expert_domain_str,
                             shared_memory['procedure_text_to_icd'],
-                            shared_memory["patient_context"],
-                            shared_memory["discussion"],
+                            retain_most_recent_info(shared_memory["patient_context"], retain_last_fraction),
+                            retain_most_recent_info(shared_memory["discussion"], retain_last_fraction, retain_last_num),
                             agent_info["memory"][-1]["new_insight"]
                         )
 
                     response_text = get_response(prompt, model_info)
+
+                    # print(response_text)
 
                     if response_text is None or response_text.strip() == "":
                         print(f"Empty response from {expert_name}. Skipping this agent.")
@@ -227,8 +229,10 @@ def run_by_subject_json(config_run_dir: str,
 
                     leader_prompt = team_lead_decision.format(
                         shared_memory['procedure_text_to_icd'],
-                        shared_memory["patient_context"],
-                        shared_memory["discussion"],
+                        retain_most_recent_info(shared_memory["patient_context"], retain_last_fraction),
+                        retain_most_recent_info(shared_memory["discussion"], retain_last_fraction, retain_last_num),
+                        round + 1,
+                        num_rounds
                     )
 
                     leader_response_text = get_response(leader_prompt, model_info)

@@ -1,0 +1,214 @@
+import os
+import json
+import random
+from prompts.public_discussion import (
+    expert_without_query_consensus,
+    expert_with_query_consensus,
+    expert_without_query_leader,
+    expert_with_query_leader,
+)
+from utils.helper import format_discussion_response, format_leader_response
+from utils.call_llms import get_response
+from utils.get_patient_context import get_patient_context_per_admission
+from pipeline.update_private_memory import update_agent_private_thinking
+from utils.truncate_prompts import retain_most_recent_info
+
+
+def alone_run_by_subject_json(config_run_dir: str,
+                        patient_ehr_json_path: str,
+                        agents: dict,
+                        model_info: dict,
+                        num_rounds: int,
+                        end_condition: str,
+                        query_literature: bool,
+                        rag_data_dir: str,
+                        procedure_text_to_icd: dict,
+                        retain_last_fraction: float = 1.0,
+                        retain_last_num: int = float("inf")):
+    """
+    A single agent predicts the procedures based on subject's EHR data.
+    """
+
+    num_rounds = 1
+
+    # load patient ehr from json
+    patient_name = os.path.basename(patient_ehr_json_path).replace(".db.json", "")
+
+    with open(patient_ehr_json_path, "r") as f:
+        patient_ehr = json.load(f)
+
+    gender = patient_ehr["gender"]
+    dob = patient_ehr["dob"]
+    ethnicity = patient_ehr["ethnicity"]
+    language = patient_ehr["language"]
+    admissions = patient_ehr["admissions"]
+
+    for i, admission in enumerate(admissions):
+
+        discussion_save_path = os.path.join(config_run_dir, f"{patient_name}_admission_{i}_discussion.json")
+
+        if os.path.exists(discussion_save_path):
+            print(f"Discussion file {discussion_save_path} already exists. Skipping this admission.")
+            return
+
+        admission_info = get_patient_context_per_admission(patient_ehr, i)
+
+        if admission_info["skip"]:
+            print(f"no procedures found for admission {i} of patient {patient_name}. Skipping this admission.")
+            continue
+        else:
+            patient_context = admission_info["context"]
+            ground_truth_procedures_icd9 = admission_info["ground_truth_procedures_icd9"]
+            ground_truth_procedures_text = admission_info["ground_truth_procedures_text"]
+            age_at_admission = admission_info["age_at_admission"]
+            insurance_type = admission_info["insurance_type"]
+            windowed_ehr_list = admission_info["windowed_ehr_list"]
+
+        predicted_procedures_icd9 = []
+        predicted_procedures_text = []
+        num_rounds_per_window = []
+
+        shared_memory = {
+                "procedure_text_to_icd": procedure_text_to_icd,
+                "discussion": []
+            }
+
+        for window_idx, window in enumerate(windowed_ehr_list):
+            print(f"\nProcessing window {window_idx + 1}/{len(windowed_ehr_list)} for admission {i+1}/{len(admissions)} of patient {patient_name}")
+            
+            shared_memory["patient_context"] = {"basic_info": patient_context,
+                                                "recent_info": window["windowed_ehr"]} # causal}
+
+                
+            proposed_procedures_icd9_str = set() # hash with str
+            
+            list_proposed_procedures_icd9_str = []
+            list_proposed_procedures_text_str = []
+
+            agents_key_list = list(agents.keys())
+
+            round = 0
+            # randomly shuffle the agents for each round
+            random.shuffle(agents_key_list)
+            for chapter_idx in agents_key_list:
+                print(f"Chapter Index: {chapter_idx}")
+                agent_info = agents[chapter_idx]
+                # print(f"Agent: {agent_info['expert_name']} (Domain: {agent_info['expert_domain_str']})")
+                expert_domain_str = agent_info["expert_domain_str"]
+                expert_name = agent_info["expert_name"]
+
+                if not query_literature:
+                    prompt = expert_without_query_consensus.format(
+                        expert_domain_str,
+                        shared_memory['procedure_text_to_icd'],
+                        retain_most_recent_info(shared_memory["patient_context"], retain_last_fraction),
+                        retain_most_recent_info(shared_memory["discussion"], retain_last_fraction, retain_last_num),
+                        round + 1,
+                        num_rounds,
+                    )
+                elif query_literature:
+
+                    updated_private_memory = update_agent_private_thinking(
+                        round,
+                        chapter_idx,
+                        retain_most_recent_info(shared_memory["patient_context"], retain_last_fraction),
+                        retain_most_recent_info(shared_memory["discussion"], retain_last_fraction, retain_last_num),
+                        agent_info["memory"],
+                        model_info,
+                        rag_data_dir,
+                        alone=True
+                    )
+
+                    agent_info["memory"] = updated_private_memory
+
+                    prompt = expert_with_query_consensus.format(
+                        expert_domain_str,
+                        shared_memory['procedure_text_to_icd'],
+                        retain_most_recent_info(shared_memory["patient_context"], retain_last_fraction),
+                        retain_most_recent_info(shared_memory["discussion"], retain_last_fraction, retain_last_num),
+                        agent_info["memory"][-1]["new_insight"],
+                        round + 1,
+                        num_rounds,
+                    )
+                
+                response_text = get_response(prompt, model_info)
+
+                print(response_text)
+
+                if response_text is None or response_text.strip() == "":
+                    print(f"Empty response from {expert_name}. Skipping this agent.")
+                    continue
+
+                formatted_response = format_discussion_response(response_text)
+
+                if len(formatted_response["Proposed ICD9"]) > 0:
+                    proposed_procedures_icd9_str.add(str(formatted_response["Proposed ICD9"]))
+                    list_proposed_procedures_icd9_str.append(str(formatted_response["Proposed ICD9"]))
+                    list_proposed_procedures_text_str.append(str(formatted_response["Proposed Text"]))
+
+                shared_memory["discussion"].append({
+                    "admission_window_idx": window_idx,
+                    "round_idx": round,
+                    "expert_idx": agent_info["expert_idx"],
+                    "expert": expert_name,
+                    "response": formatted_response
+                })
+
+            if len(proposed_procedures_icd9_str) == 0:
+                print("No procedures proposed in this round. Ending discussion.")
+                shared_memory["discussion"].append({
+                    "admission_window_idx": window_idx,
+                    "round_idx": round,
+                    "role": "system",
+                    "number_of_proposed_sequences": len(proposed_procedures_icd9_str),
+                    "consensus": True,
+                    "content": "No procedures proposed in this round. Ending discussion.",
+                    "proposed_procedures_icd9": [],
+                    "proposed_procedures_text": []})
+
+            else:
+                print("Consensus reached on the proposed procedures sequence.")
+                shared_memory["discussion"].append({
+                    "admission_window_idx": window_idx,
+                    "round_idx": round,
+                    "role": "system",
+                    "number_of_proposed_sequences": len(proposed_procedures_icd9_str),
+                    "consensus": True,
+                    "content": f"Decided procedure sequences: {', '.join(list_proposed_procedures_text_str)}",
+                    "proposed_procedures_icd9": list_proposed_procedures_icd9_str,
+                    "proposed_procedures_text": list_proposed_procedures_text_str
+                })
+                predicted_procedures_icd9.extend(list_proposed_procedures_icd9_str)
+                predicted_procedures_text.extend(list_proposed_procedures_text_str)
+                num_rounds_per_window.append(round + 1)  # save the number of rounds for this window 
+            
+
+        save_info = {
+            "patient_name": patient_name,
+            "gender": gender,
+            "ethnicity": ethnicity,
+            "language": language,
+            "admission_index": i,
+            "end_condition": end_condition,
+            "query_literature": query_literature,
+            "age_at_admission": age_at_admission,
+            "insurance_type": insurance_type,
+            "ground_truth_procedures_icd9": ground_truth_procedures_icd9,
+            "ground_truth_procedures_text": ground_truth_procedures_text,
+            "num_rounds": num_rounds_per_window,
+            "final_discussion_procedures_icd9": predicted_procedures_icd9,
+            "final_discussion_procedures_text": predicted_procedures_text,
+            "discussion": shared_memory["discussion"]
+        }
+
+        with open(discussion_save_path, "w") as f:
+            json.dump(save_info, f, indent=4)
+
+        if query_literature:
+            # save agents' memory
+            for chapter_idx in agents_key_list:
+                agent_info = agents[chapter_idx]
+                agent_memory_save_path = os.path.join(config_run_dir, f"{patient_name}_admission_{i}_agent_{agent_info['expert_idx']}_memory.json")
+                with open(agent_memory_save_path, "w") as f:
+                    json.dump(agent_info["memory"], f, indent=4)
+            

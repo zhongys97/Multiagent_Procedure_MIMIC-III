@@ -14,7 +14,7 @@ raise_questions_for_rag = """
     Do not index the questions, do not use bullet points, and do not use any other formatting.
     Answer with a serialized list format that contains the questions, explicitly using square brackets and commas to separate the questions
     Questions are enclosde in double quotes:
-    ["<question 1>", "<question 2>"]
+    ["<question 1 up to 100 words>", "<question 2 up to 100 words>"]
 """
 
 rag_prompt = """
@@ -35,7 +35,7 @@ rag_prompt = """
         The relevance score is an integer between 0 and 10, where 0 means not relevant at all, and 10 means highly relevant.
         
         Format your response as a serialized JSON with the following keys, explcicitly include the curly braces, double quotes, and colons:
-        "Answer": <your answer here>,
+        "Answer": <your answer here up to 200 words>,
         "Relevance": <score>
     """
 

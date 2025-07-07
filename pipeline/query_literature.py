@@ -49,42 +49,53 @@ def query_faiss(index, chunks, sources, question: str, top_k: int = 5):
 
 
 
-def generate_rag_responses(chapter_idx: str, questions: list, indices_dir: str, model_info: dict) -> str:
-
-    index_pkl_name = chapter_idx_to_pkl_name[chapter_idx]
-
-    expert_domain_str = " ".join(index_pkl_name.split("_")[1:]).replace(".pkl", "")
-    index_pkl_path = os.path.join(indices_dir, index_pkl_name)
-
-    with open(index_pkl_path, "rb") as f:
-        faiss_index_and_texts = pickle.load(f)
-
-    # Load FAISS index
-    index = faiss.deserialize_index(faiss_index_and_texts["index"])
-
-    # Load associated text chunks and source filenames
-    chunks = faiss_index_and_texts["chunks"]
-    sources = faiss_index_and_texts["sources"]
+def generate_rag_responses(chapter_idx: str, questions: list, indices_dir: str, model_info: dict, alone: bool = False) -> str:
 
     combined_response = []
-    for question in questions:
-        top_chunks = query_faiss(index, chunks, sources, question, top_k=5)
+    if not alone:
+        chapter_indices = [chapter_idx]
+    else:
+        chapter_indices = chapter_idx_to_pkl_name.keys()
         
-        context_text = ""
-        for chunk in top_chunks:
-            context_text += f"{chunk['chunk']} (Source: {chunk['source']})\n\n"
+    for chapter_idx in chapter_indices:
+        index_pkl_name = chapter_idx_to_pkl_name[chapter_idx]
 
-        prompt = rag_prompt.format(
-            expert_domain_str,
-            context_text,
-            questions
-        )
+        if not alone:
+            expert_domain_str = " ".join(index_pkl_name.split("_")[1:]).replace(".pkl", "")
+        else:
+            expert_domain_str = "primary care clinician"
+            
+        index_pkl_path = os.path.join(indices_dir, index_pkl_name)
 
-        response_str = get_response(prompt, model_info)
+        with open(index_pkl_path, "rb") as f:
+            faiss_index_and_texts = pickle.load(f)
 
-        # response_str = response.choices[0].message.content.strip()
-        response_dict = format_rag_response(response_str)
-        combined_response.append({"Question": question, "Response": response_dict})
+        # Load FAISS index
+        index = faiss.deserialize_index(faiss_index_and_texts["index"])
+
+        # Load associated text chunks and source filenames
+        chunks = faiss_index_and_texts["chunks"]
+        sources = faiss_index_and_texts["sources"]
+
+        
+        for question in questions:
+            top_chunks = query_faiss(index, chunks, sources, question, top_k=5)
+            
+            context_text = ""
+            for chunk in top_chunks:
+                context_text += f"{chunk['chunk']} (Source: {chunk['source']})\n\n"
+
+            prompt = rag_prompt.format(
+                expert_domain_str,
+                context_text,
+                questions
+            )
+
+            response_str = get_response(prompt, model_info)
+
+            # response_str = response.choices[0].message.content.strip()
+            response_dict = format_rag_response(response_str)
+            combined_response.append({"Question": question, "Response": response_dict})
         
     return combined_response
 
