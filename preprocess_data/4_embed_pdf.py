@@ -78,4 +78,9 @@ if __name__ == "__main__":
 
         one_chapter_pdf_dir = os.path.join(CHAPTERS_DIR, chapter)
         save_pkl_path = os.path.join(OUTPUT_PKL_DIR, f"{chapter}.pkl")
+
+        if os.path.exists(save_pkl_path):
+            print(f"Skipping {chapter}, already processed.")
+            continue
+        
         preprare_one_chapter(metadata_path, one_chapter_pdf_dir, save_pkl_path)

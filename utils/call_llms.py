@@ -132,6 +132,43 @@ def get_response(prompt: str, model_info: dict):
         except Exception as e:
             print(f"An error occurred: {e}")
             return ""
+        
+    elif "deepseek" in model_name:
+
+        import torch
+        model = model_info["model_instance"]
+        tokenizer = model_info["tokenizer_instance"]
+
+        try:
+            # Tokenize input
+            inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=120000).to(model.device)
+            input_len = inputs["input_ids"].shape[1]
+
+            # Generate output
+            with torch.no_grad():
+                outputs = model.generate(
+                    **inputs,
+                    max_new_tokens=2000,
+                    temperature=0.7,
+                    top_p=0.9,
+                    do_sample=True,
+                    pad_token_id=tokenizer.eos_token_id
+                )
+
+            # Slice to exclude the prompt tokens
+            generated_tokens = outputs[0][input_len:]
+
+            # Decode only the generated part
+            response = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+            think_end = response.find('</think>')
+            if think_end != -1:
+                response = response[think_end + len('</think>'):].strip()
+            return response.strip()
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            return ""
+
+
     elif model_name == "medgemma":
         import torch
         torch.set_float32_matmul_precision('high')

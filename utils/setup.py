@@ -111,6 +111,39 @@ def setup_models(model_name: str, api_keys_json_path="./api_keys.json"):
             "model_instance": model,
             "tokenizer_instance": tokenizer,
         }
+    elif "deepseek" in model_name:
+
+        from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+        import torch
+
+        model_id = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+        quant_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,  # Use bfloat16 if on A100/H100
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4"  # nf4 is recommended
+        )
+
+        # Load the model with quantization
+        model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            quantization_config=quant_config,
+            device_map="auto",
+            trust_remote_code=True,
+            attn_implementation="flash_attention_2",
+            max_position_embeddings=131072,  # Explicitly set to 128K (if model supports it)
+            rope_scaling={"type": "dynamic", "factor": 4.0}  # RoPE scaling for extrapolation
+        )
+        model.eval()
+        return {
+            "model_name": model_name,
+            "model_instance": model,
+            "tokenizer_instance": tokenizer,
+        }
+
     elif model_name == "medgemma":
         import transformers
 

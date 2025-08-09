@@ -88,12 +88,18 @@ def get_accuracy_statistics(ground_truth_codes_with_periods, predicted_codes_wit
         dict: A dictionary containing precision, recall, and MRR.
     """
 
+    pred_codes_contain_alphabet = any(char.isalpha() for code in predicted_codes_with_periods for char in code)
+    pred_codes_are_numeric_but_madeup = False
+
     min_concept_distance = 8 # max diameter of the ICD-9-CM graph is 8
     for gt_code in ground_truth_codes_with_periods:
         for pred_code in predicted_codes_with_periods:
             success, dist = get_concept_distance(ICD_9_CM_graph, gt_code, pred_code)
             if success:
                 min_concept_distance = min(dist, min_concept_distance)
+            else:
+                if not pred_codes_contain_alphabet:
+                    pred_codes_are_numeric_but_madeup = True
 
     ground_truth_chapter_names = [get_chapter_name_from_code(code) for code in ground_truth_codes_with_periods]
     predicted_chapter_names = [get_chapter_name_from_code(code) for code in predicted_codes_with_periods]
@@ -159,7 +165,7 @@ def get_accuracy_statistics(ground_truth_codes_with_periods, predicted_codes_wit
         "recall_three_digits_k2": recall_three_digits_k2,
         "recall_three_digits_k5": recall_three_digits_k5,
         "recall_three_digits_k10": recall_three_digits_k10
-    }
+    }, pred_codes_contain_alphabet, pred_codes_are_numeric_but_madeup
     
 
 

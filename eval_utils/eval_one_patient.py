@@ -39,6 +39,12 @@ def eval_one_patient(patient_id: str, result_config_dir: str, ICD_9_CM_graph) ->
     num_round_per_window = []
     expert_confidence_levels = []
     last_round_expert_confidence_levels = []
+    json_parse_error = 0
+    result_not_list_error = 0
+    code_alphabet_error = 0
+    code_numeric_but_madeup = 0
+    other_errors = 0
+    
     perf_metrics = defaultdict(list)
 
     for patient_json in patient_jsons:
@@ -53,6 +59,12 @@ def eval_one_patient(patient_id: str, result_config_dir: str, ICD_9_CM_graph) ->
 
         ground_truth = discussion_data["ground_truth_procedures_icd9"]
 
+
+        try:
+            predicted = discussion_data["final_discussion_procedures_icd9"]
+        except Exception as e:
+            json_parse_error += 1
+
         try:
             if config == "leader":
                 predicted = discussion_data["final_discussion_procedures_icd9"]
@@ -64,7 +76,7 @@ def eval_one_patient(patient_id: str, result_config_dir: str, ICD_9_CM_graph) ->
                     predicted = literal_eval(discussion_data["final_discussion_procedures_icd9"][0])
         except Exception as e:
             # print(f"Error parsing predicted codes for patient {patient_id}: {e}")
-            predicted = []
+            result_not_list_error += 1
 
         try:
             predicted_cleaned = []
@@ -73,7 +85,7 @@ def eval_one_patient(patient_id: str, result_config_dir: str, ICD_9_CM_graph) ->
                     code = str(code)
                     if len(code) == 0:
                         continue
-                    code = "".join(c for c in code if c.isdigit())
+                    code = "".join(c for c in code)
                     if len(predicted_cleaned) > 0:
                         if code == predicted_cleaned[-1]:
                             continue
@@ -81,6 +93,7 @@ def eval_one_patient(patient_id: str, result_config_dir: str, ICD_9_CM_graph) ->
             else:
                 predicted_cleaned = [str(predicted)]
         except Exception as e:
+            other_errors += 1
             print("Error cleaning prediction code", e)
             print(predicted)
 
@@ -90,6 +103,7 @@ def eval_one_patient(patient_id: str, result_config_dir: str, ICD_9_CM_graph) ->
             predicted_codes_with_periods = [convert_mimic_codes_to_four_digits(code)["code_with_periods"] for code in predicted_cleaned]
             bool_decision_per_admission.append(True if len(predicted_codes_with_periods) > 0 else False)
         except Exception as e:
+            other_errors += 1
             print(f"Error converting codes for patient {patient_id}: {e}")
 
         try:
@@ -98,14 +112,21 @@ def eval_one_patient(patient_id: str, result_config_dir: str, ICD_9_CM_graph) ->
             expert_confidence_levels += completion_statistics["expert_confidence_levels"]
             last_round_expert_confidence_levels += completion_statistics["last_round_expert_confidence_levels"]
         except Exception as e:
+            other_errors += 1
             print(f"Error processing completion for patient {patient_id}: {e}")
 
         try:
-            accuracy_statistics = get_accuracy_statistics(ground_truth_codes_with_periods, predicted_codes_with_periods, ICD_9_CM_graph)
+            accuracy_statistics, pred_codes_contain_alphabet, pred_codes_are_numeric_but_madeup = get_accuracy_statistics(ground_truth_codes_with_periods, predicted_codes_with_periods, ICD_9_CM_graph)
+            if pred_codes_contain_alphabet:
+                code_alphabet_error += 1
+            if pred_codes_are_numeric_but_madeup:
+                code_numeric_but_madeup += 1
+            
             for key in perf_metric_keys:
                 perf_metrics[key].append(accuracy_statistics[key])
             perf_metrics["min_concept_distance"].append(accuracy_statistics["min_concept_distance"])
         except Exception as e:
+            other_errors += 1
             print(f"Error calculating accuracy statistics for patient {patient_id}: {e}")
     
     try:
@@ -119,17 +140,31 @@ def eval_one_patient(patient_id: str, result_config_dir: str, ICD_9_CM_graph) ->
             "min_concept_distance": min(perf_metrics["min_concept_distance"]) if perf_metrics["min_concept_distance"] else 8
         }
 
+        
+        # for perf_metric in perf_metric_keys:
+        #     patient_metrics[perf_metric + "_raw"] = avg_perf_metrics[perf_metric]
+        #     patient_metrics[ perf_metric + "_normalized"] = avg_perf_metrics[perf_metric] * patient_metrics["average_completion"]
+
         for perf_metric in perf_metric_keys:
             patient_metrics[perf_metric] = avg_perf_metrics[perf_metric]
 
+
         for k, v in patient_metrics.items():
             patient_metrics[k] = round(v, 4)
+            
 
     except Exception as e:
         print(f"Error aggregating metrics for patient {patient_id}: {e}")
     
+    errors_analysis = {
+        "json_parse_error": json_parse_error,
+        "result_not_list_error": result_not_list_error,
+        "code_alphabet_error": code_alphabet_error,
+        "code_numeric_but_madeup": code_numeric_but_madeup,
+        "other_errors": other_errors
+    }
 
-    return {
+    metrics = {
         "patient_id": int(patient_id),
         "gender": gender,
         "ethnicity": ethnicity,
@@ -137,6 +172,8 @@ def eval_one_patient(patient_id: str, result_config_dir: str, ICD_9_CM_graph) ->
         "insurance": insurance,
         **patient_metrics
     }
+
+    return {"metrics": metrics, "errors_analysis": errors_analysis}
 
 if __name__ == "__main__":
 
