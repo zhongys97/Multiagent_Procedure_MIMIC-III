@@ -34,27 +34,6 @@ def get_response(prompt: str, model_info: dict):
         print("Exceeded maximum retry attempts for GPT-4o.")
         return ""
     
-    elif model_name == "gpt-4o-mini":
-        model = model_info["model_instance"]
-        for attempt in range(5):
-            try:
-                response = model.responses.create(
-                    model="gpt-4o-mini",
-                    input=prompt
-                )
-                return response.output_text.strip()
-
-            except Exception as e:
-                if "rate limit" in str(e).lower():
-                    print(f"[Attempt {attempt + 1}] Rate limit hit. Retrying in 30 seconds...")
-                    time.sleep(30)
-                else:
-                    print(f"[Attempt {attempt + 1}] Unhandled error: {repr(e)}")
-                    return ""
-
-        print("Exceeded maximum retry attempts for GPT-4.1 mini.")
-        return ""
-    
     elif model_name == "gpt-4.1-nano":
         model = model_info["model_instance"]
         for attempt in range(5):
@@ -75,35 +54,8 @@ def get_response(prompt: str, model_info: dict):
 
         print("Exceeded maximum retry attempts for GPT-4.1 mini.")
         return ""
-    elif model_name == "claude-3":
-        model = model_info["model_instance"]
-        for attempt in range(5):
-            try:
-                response = model.messages.create(
-                    model="claude-3-haiku-20240307",
-                    max_tokens=1000,
-                    temperature=0.5,
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ]
-                )
-                if response.content:
-                    return response.content[0].text.strip()
-                else:
-                    print("Empty Claude response.")
-                    return ""
-            except anthropic.RateLimitError as e:
-                print("Rate limited. Retrying...")
-                time.sleep(10)
+    
 
-            except anthropic.APIStatusError as e:
-                if "Overloaded" in str(e):
-                    print("Claude overloaded. Retrying in 15s...")
-                    time.sleep(15)
-                else:
-                    print(f"An error occurred: {repr(e)}")
-                    return ""
-                
     elif model_name == "qwen2":
         import torch
         model = model_info["model_instance"]
